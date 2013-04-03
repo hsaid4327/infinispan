@@ -25,7 +25,7 @@
    <modelVersion>4.0.0</modelVersion>
    <groupId>org.infinispan</groupId>
    <artifactId>infinispan-parent</artifactId>
-   <version>5.2.7-SNAPSHOT</version>
+   <version>5.2.6-SNAPSHOT</version>
    <packaging>pom</packaging>
    <name>Infinispan Common Parent</name>
    <description>Infinispan common parent POM module</description>
@@ -159,7 +159,6 @@
       <version.jstl>1.2</version.jstl>
       <version.jta>1.0.0.Final</version.jta>
       <version.junit>4.10</version.junit>
-      <version.leveldb>0.6</version.leveldb>
       <version.log4j>1.2.16</version.log4j>
       <version.lucene>3.6.2</version.lucene>
       <version.mc4j>1.2.6</version.mc4j>
@@ -838,11 +837,6 @@
             <groupId>spy</groupId>
             <artifactId>memcached</artifactId>
             <version>${version.spymemcached}</version>
-         </dependency>
-         <dependency>
-            <groupId>org.iq80.leveldb</groupId>
-            <artifactId>leveldb</artifactId>
-            <version>${version.leveldb}</version>
          </dependency>
       </dependencies>
    </dependencyManagement>
