@@ -54,15 +54,20 @@ import java.util.concurrent.TimeUnit;
  */
 public class BackupReceiverImpl implements BackupReceiver {
 
-   private final Cache cache;
+   protected final BackupCacheUpdater siteUpdater;   
+   protected final Cache cache;
 
    //todo add some housekeeping logic for this, e.g. timeouts..
-   private final ConcurrentMap<GlobalTransaction, GlobalTransaction> remote2localTx = new ConcurrentHashMap<GlobalTransaction, GlobalTransaction>();
-   private final BackupCacheUpdater siteUpdater;
+   protected final ConcurrentMap<GlobalTransaction, GlobalTransaction> remote2localTx = new ConcurrentHashMap<GlobalTransaction, GlobalTransaction>();   
 
    public BackupReceiverImpl(Cache cache) {
       this.cache = cache;
       siteUpdater = new BackupCacheUpdater(cache, remote2localTx);
+   }
+   
+   public BackupReceiverImpl( Cache cache, BackupCacheUpdater siteUpdater ) {
+      this.cache = cache;
+      this.siteUpdater = siteUpdater;
    }
 
    @Override
@@ -75,17 +80,16 @@ public class BackupReceiverImpl implements BackupReceiver {
       return command.acceptVisitor(null, siteUpdater);
    }
 
-   public static final class BackupCacheUpdater extends AbstractVisitor {
+   public static class BackupCacheUpdater extends AbstractVisitor {
 
       private static Log log = LogFactory.getLog(BackupCacheUpdater.class);
 
-      private final ConcurrentMap<GlobalTransaction, GlobalTransaction> remote2localTx;
+      protected final ConcurrentMap<GlobalTransaction, GlobalTransaction> remote2localTx;
+      protected final AdvancedCache backupCache;
 
-      private final AdvancedCache backupCache;
-
-      BackupCacheUpdater(Cache backup, ConcurrentMap<GlobalTransaction, GlobalTransaction> remote2localTx) {
+      public BackupCacheUpdater(Cache backup, ConcurrentMap<GlobalTransaction, GlobalTransaction> remote2localTx) {
          //ignore return values on the backup
-         this.backupCache = backup.getAdvancedCache().withFlags(Flag.IGNORE_RETURN_VALUES, Flag.SKIP_XSITE_BACKUP);
+         this.backupCache = backup.getAdvancedCache().withFlags(Flag.IGNORE_RETURN_VALUES, Flag.SKIP_XSITE_BACKUP, Flag.SKIP_REMOTE_LOOKUP);
          this.remote2localTx = remote2localTx;
       }
 
@@ -98,8 +102,8 @@ public class BackupReceiverImpl implements BackupReceiver {
                                            command.getMaxIdleTimeMillis(), TimeUnit.MILLISECONDS);
          }
          return backupCache.put(command.getKey(), command.getValue(),
-                                                                     command.getLifespanMillis(), TimeUnit.MILLISECONDS,
-                                                                     command.getMaxIdleTimeMillis(), TimeUnit.MILLISECONDS);
+                                command.getLifespanMillis(), TimeUnit.MILLISECONDS,
+                                command.getMaxIdleTimeMillis(), TimeUnit.MILLISECONDS);
       }
 
       @Override
@@ -150,10 +154,6 @@ public class BackupReceiverImpl implements BackupReceiver {
             replayModifications(command);
          }
          return null;
-      }
-
-      private boolean isTransactional() {
-         return backupCache.getCacheConfiguration().transaction().transactionMode() == TransactionMode.TRANSACTIONAL;
       }
 
       @Override
@@ -228,7 +228,7 @@ public class BackupReceiverImpl implements BackupReceiver {
          }
       }
 
-      private TransactionManager txManager() {
+      protected TransactionManager txManager() {
          return backupCache.getAdvancedCache().getTransactionManager();
       }
 
@@ -236,10 +236,14 @@ public class BackupReceiverImpl implements BackupReceiver {
          return backupCache.getComponentRegistry().getComponent(TransactionTable.class);
       }
 
-      private void replayModifications(PrepareCommand command) throws Throwable {
+      protected void replayModifications(PrepareCommand command) throws Throwable {
          for (WriteCommand c : command.getModifications()) {
             c.acceptVisitor(null, this);
          }
       }
+      
+      protected boolean isTransactional() {
+         return backupCache.getCacheConfiguration().transaction().transactionMode() == TransactionMode.TRANSACTIONAL;
+      }      
    }
 }
