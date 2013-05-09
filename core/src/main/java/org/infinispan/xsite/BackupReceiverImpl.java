@@ -82,7 +82,7 @@ public class BackupReceiverImpl implements BackupReceiver {
 
    public static class BackupCacheUpdater extends AbstractVisitor {
 
-      private static Log log = LogFactory.getLog(BackupCacheUpdater.class);
+      private static final Log log = LogFactory.getLog(BackupCacheUpdater.class);
 
       protected final ConcurrentMap<GlobalTransaction, GlobalTransaction> remote2localTx;
       protected final AdvancedCache backupCache;
