@@ -287,6 +287,9 @@ public class Parser52 implements ConfigurationParser<ConfigurationBuilderHolder>
             case REMOTE_CACHE:
                backupForBuilder.remoteCache(value);
                break;
+            case BACKUP_RECEIVER_CLASS:
+               backupForBuilder.backupReceiverClass(value);
+               break;               
             default:
                throw ParseUtils.unexpectedElement(reader);
          }

@@ -37,10 +37,5 @@ public interface BackupReceiverRepository {
    /**
     * Process an CacheRpcCommand received from a remote site.
     */
-   public Object handleRemoteCommand(SingleRpcCommand cmd, SiteAddress src) throws Throwable;
-   
-   /**
-    * Builds a BackupReceiver instance from the specified configuration.
-    */
-   public BackupReceiver buildBackupReceiver( Cache cache );
+   public Object handleRemoteCommand(SingleRpcCommand cmd, SiteAddress src) throws Throwable;   
 }

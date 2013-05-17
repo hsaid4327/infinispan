@@ -43,7 +43,7 @@ public class BackupConfigurationBuilder extends AbstractConfigurationChildBuilde
    private TakeOfflineConfigurationBuilder takeOfflineBuilder;
 
    private boolean enabled = true;
-
+      
    public BackupConfigurationBuilder(ConfigurationBuilder builder) {
       super(builder);
       takeOfflineBuilder = new TakeOfflineConfigurationBuilder(builder, this);
@@ -148,7 +148,7 @@ public class BackupConfigurationBuilder extends AbstractConfigurationChildBuilde
       this.enabled = isEnabled;
       return this;
    }
-
+     
    @Override
    public void validate() {
       takeOfflineBuilder.validate();
@@ -163,7 +163,7 @@ public class BackupConfigurationBuilder extends AbstractConfigurationChildBuilde
    @Override
    public BackupConfiguration create() {
       return new BackupConfiguration(site, strategy, replicationTimeout, backupFailurePolicy, failurePolicyClass,
-                                     useTwoPhaseCommit, takeOfflineBuilder.create(), enabled);
+                                     useTwoPhaseCommit, takeOfflineBuilder.create(), enabled );
    }
 
    @Override
@@ -209,6 +209,7 @@ public class BackupConfigurationBuilder extends AbstractConfigurationChildBuilde
       result = 31 * result + (failurePolicyClass != null ? failurePolicyClass.hashCode() : 0);
       result = 31 * result + (takeOfflineBuilder != null ? takeOfflineBuilder.hashCode() : 0);
       result = 31 * result + (useTwoPhaseCommit ? 1 : 0);
+      
       return result;
    }
 
@@ -222,7 +223,7 @@ public class BackupConfigurationBuilder extends AbstractConfigurationChildBuilde
             ", backupFailurePolicy=" + backupFailurePolicy +
             ", failurePolicyClass='" + failurePolicyClass + '\'' +
             ", takeOfflineBuilder=" + takeOfflineBuilder +
-            ", enabled=" + enabled +
+            ", enabled=" + enabled +            
             '}';
    }
 }

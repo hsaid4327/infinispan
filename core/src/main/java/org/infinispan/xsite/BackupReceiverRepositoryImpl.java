@@ -23,6 +23,7 @@ import org.infinispan.Cache;
 import org.infinispan.commands.VisitableCommand;
 import org.infinispan.commands.remote.SingleRpcCommand;
 import org.infinispan.configuration.cache.Configuration;
+import org.infinispan.configuration.global.GlobalConfiguration;
 import org.infinispan.factories.annotations.Inject;
 import org.infinispan.factories.annotations.Start;
 import org.infinispan.factories.annotations.Stop;
@@ -30,11 +31,14 @@ import org.infinispan.manager.EmbeddedCacheManager;
 import org.infinispan.notifications.Listener;
 import org.infinispan.notifications.cachemanagerlistener.annotation.CacheStopped;
 import org.infinispan.notifications.cachemanagerlistener.event.CacheStoppedEvent;
+import org.infinispan.util.Util;
+import org.infinispan.util.concurrent.ConcurrentMapFactory;
 import org.infinispan.util.logging.Log;
 import org.infinispan.util.logging.LogFactory;
 import org.jgroups.protocols.relay.SiteAddress;
 import org.jgroups.protocols.relay.SiteUUID;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -47,20 +51,16 @@ import java.util.concurrent.ConcurrentMap;
 public class BackupReceiverRepositoryImpl implements BackupReceiverRepository {
 
    private static Log log = LogFactory.getLog(BackupReceiverRepositoryImpl.class);
-
-   private final static ConcurrentMap< String, BackupReceiver > backupReceiverImpls = new ConcurrentHashMap< String, BackupReceiver >();
-   
-   private final ConcurrentMap<SiteCachePair, BackupReceiver> backupReceivers = new ConcurrentHashMap<SiteCachePair, BackupReceiver>();
+      
+   private final ConcurrentMap<SiteCachePair, BackupReceiver> backupReceivers = ConcurrentMapFactory.makeConcurrentMap();
 
    public EmbeddedCacheManager cacheManager;
+   private GlobalConfiguration globalConfig;
    
-   public static void addBackupReceiverImpl( String cacheName, BackupReceiver backupReceiver ) {
-      backupReceiverImpls.putIfAbsent(cacheName, backupReceiver);
-   }
-
    @Inject
-   public void setup(EmbeddedCacheManager cacheManager) {
+   public void setup(EmbeddedCacheManager cacheManager, GlobalConfiguration globalConfig) {
       this.cacheManager = cacheManager;
+      this.globalConfig = globalConfig;
    }
 
    @Start
@@ -93,17 +93,18 @@ public class BackupReceiverRepositoryImpl implements BackupReceiverRepository {
       return localBackupCache.handleRemoteCommand((VisitableCommand)cmd.getCommand());
    }
    
-   @Override
-   public BackupReceiver buildBackupReceiver( Cache cache ) {      
-      BackupReceiver backupReceiver = backupReceiverImpls.get( cache.getName() );    
+   private BackupReceiver buildBackupReceiver( Configuration cacheConfiguration, Cache cache ) throws Exception {      
       
-      // If there is no backup receiver configured, use the default.
-      if( backupReceiver == null ) {
-         backupReceiver = new BackupReceiverImpl(cache);
-         backupReceiverImpls.put( cache.getName(), backupReceiver );
+      String backupReceiverClass = cacheConfiguration.sites().backupFor().backupReceiverClass();
+      if( backupReceiverClass != null ) {         
+         Class[] paramTypes = {Cache.class};
+         Object[] params = {cache};
+         BackupReceiver instance = Util.getInstanceWithConstructor(backupReceiverClass, paramTypes, params, globalConfig.classLoader());
+         return instance;
       }
-      
-      return backupReceiver;
+      else {
+         return new BackupReceiverImpl(cache);
+      }
    }
 
    /**
@@ -112,8 +113,9 @@ public class BackupReceiverRepositoryImpl implements BackupReceiverRepository {
     * <p/>
     * Also starts the cache if not already stated; that is because the cache is needed for update after when this method
     * is invoked.
+    * @throws Exception 
     */
-   public BackupReceiver getBackupCacheManager(String remoteSite, String remoteCache) {
+   public BackupReceiver getBackupCacheManager(String remoteSite, String remoteCache) throws Exception {
       SiteCachePair toLookFor = new SiteCachePair(remoteCache, remoteSite);
       BackupReceiver backupManager = backupReceivers.get(toLookFor);
       if (backupManager != null) return backupManager;
@@ -122,7 +124,7 @@ public class BackupReceiverRepositoryImpl implements BackupReceiverRepository {
       Configuration dcc = cacheManager.getDefaultCacheConfiguration();
       if (isBackupForRemoteCache(remoteSite, remoteCache, dcc, EmbeddedCacheManager.DEFAULT_CACHE_NAME)) {
          Cache<Object, Object> cache = cacheManager.getCache();
-         backupReceivers.putIfAbsent(toLookFor, buildBackupReceiver(cache));
+         backupReceivers.putIfAbsent(toLookFor, buildBackupReceiver(dcc,cache));
          toLookFor.setLocalCacheName(EmbeddedCacheManager.DEFAULT_CACHE_NAME);
          return backupReceivers.get(toLookFor);
       }
@@ -133,7 +135,7 @@ public class BackupReceiverRepositoryImpl implements BackupReceiverRepository {
          if (isBackupForRemoteCache(remoteSite, remoteCache, cacheConfiguration, name)) {
             Cache<Object, Object> cache = cacheManager.getCache(name);
             toLookFor.setLocalCacheName(name);
-            backupReceivers.putIfAbsent(toLookFor, buildBackupReceiver(cache));
+            backupReceivers.putIfAbsent(toLookFor, buildBackupReceiver(cacheConfiguration,cache));
             return backupReceivers.get(toLookFor);
          }
       }
@@ -141,7 +143,7 @@ public class BackupReceiverRepositoryImpl implements BackupReceiverRepository {
                  remoteSite, remoteCache, remoteCache);
 
       Cache<Object, Object> cache = cacheManager.getCache(remoteCache);
-      backupReceivers.putIfAbsent(toLookFor, buildBackupReceiver(cache));
+      backupReceivers.putIfAbsent(toLookFor, buildBackupReceiver(cache.getCacheConfiguration(), cache));
       return backupReceivers.get(toLookFor);
    }
 
@@ -157,7 +159,6 @@ public class BackupReceiverRepositoryImpl implements BackupReceiverRepository {
       public final String remoteCache;
       public String localCacheName;
 
-
       SiteCachePair(String remoteCache, String remoteSite) {
          this.remoteCache = remoteCache;
          this.remoteSite = remoteSite;
@@ -165,6 +166,28 @@ public class BackupReceiverRepositoryImpl implements BackupReceiverRepository {
 
       public void setLocalCacheName(String localCacheName) {
          this.localCacheName = localCacheName;
+      }
+
+      @Override
+      public int hashCode() {
+         final int prime = 31;
+         int result = 1;
+         result = prime * result + ((remoteCache == null) ? 0 : remoteCache.hashCode());
+         result = prime * result + ((remoteSite == null) ? 0 : remoteSite.hashCode());
+         result = prime * result + ((localCacheName == null) ? 0 : localCacheName.hashCode());
+         return result;
+      }
+
+      @Override
+      public boolean equals(Object o) {
+         if (this == o) return true;
+         if (o == null || getClass() != o.getClass()) return false;
+         
+         SiteCachePair that = (SiteCachePair) o;
+         if (remoteCache != null ? !remoteCache.equals(that.remoteCache) : that.remoteCache != null) return false;
+         if (remoteSite != null ? !remoteSite.equals(that.remoteSite) : that.remoteSite != null) return false;
+         if (localCacheName != null ? !localCacheName.equals(that.localCacheName) : that.localCacheName != null) return false;
+         return true;
       }
 
       @Override

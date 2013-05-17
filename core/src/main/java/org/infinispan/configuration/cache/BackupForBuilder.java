@@ -30,7 +30,8 @@ import org.infinispan.configuration.Builder;
 public class BackupForBuilder extends AbstractConfigurationChildBuilder implements Builder<BackupForConfiguration> {
    private String remoteCache;
    private String remoteSite;
-
+   private String backupReceiverClass;
+   
    public BackupForBuilder(ConfigurationBuilder builder) {
       super(builder);
    }
@@ -63,6 +64,22 @@ public class BackupForBuilder extends AbstractConfigurationChildBuilder implemen
       return this;
    }
 
+   /**
+    * If there is a custom policy for applying backup changes, then the backupReceiverClass is required and
+    * should return the fully qualified name of a class implementing {@link org.infinispan.xsite.BackupReceiver}
+    */   
+   public String backupReceiverClass() {
+      return backupReceiverClass;
+   }
+
+   /**
+    * @see #backupReceiverClass()
+    */
+   public BackupForBuilder backupReceiverClass(String backupReceiver) {
+      this.backupReceiverClass = backupReceiver;
+      return this;
+   }
+      
    @Override
    public void validate() {
       //if both remote cache and remote site are not specified then this is not a backup
@@ -75,13 +92,14 @@ public class BackupForBuilder extends AbstractConfigurationChildBuilder implemen
 
    @Override
    public BackupForConfiguration create() {
-      return new BackupForConfiguration(remoteSite, remoteCache);
+      return new BackupForConfiguration(remoteSite, remoteCache, backupReceiverClass);
    }
 
    @Override
    public Builder<?> read(BackupForConfiguration template) {
       this.remoteCache = template.remoteCache();
       this.remoteSite = template.remoteSite();
+      this.backupReceiverClass = template.backupReceiverClass();
       return this;
    }
 
@@ -94,7 +112,8 @@ public class BackupForBuilder extends AbstractConfigurationChildBuilder implemen
 
       if (remoteCache != null ? !remoteCache.equals(that.remoteCache) : that.remoteCache != null) return false;
       if (remoteSite != null ? !remoteSite.equals(that.remoteSite) : that.remoteSite != null) return false;
-
+      if (backupReceiverClass != null ? !backupReceiverClass.equals(that.backupReceiverClass) : that.backupReceiverClass != null) return false;
+      
       return true;
    }
 
@@ -102,6 +121,7 @@ public class BackupForBuilder extends AbstractConfigurationChildBuilder implemen
    public int hashCode() {
       int result = remoteCache != null ? remoteCache.hashCode() : 0;
       result = 31 * result + (remoteSite != null ? remoteSite.hashCode() : 0);
+      result = 31 * result + (backupReceiverClass != null ? backupReceiverClass.hashCode() : 0);
       return result;
    }
 
@@ -110,11 +130,13 @@ public class BackupForBuilder extends AbstractConfigurationChildBuilder implemen
       return "BackupForBuilder{" +
             "remoteCache='" + remoteCache + '\'' +
             ", remoteSite='" + remoteSite + '\'' +
+            ", backupReceiverClass='" + backupReceiverClass + '\'' +
             '}';
    }
 
    public void reset() {
       remoteCache = null;
       remoteSite = null;
+      backupReceiverClass = null;
    }
 }

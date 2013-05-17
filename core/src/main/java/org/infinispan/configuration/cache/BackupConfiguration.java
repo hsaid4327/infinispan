@@ -114,7 +114,7 @@ public class BackupConfiguration {
       if( useTwoPhaseCommit != that.useTwoPhaseCommit ) return false;
       if (strategy != that.strategy) return false;
       if (enabled != that.enabled) return false;
-
+         
       return true;
    }
 

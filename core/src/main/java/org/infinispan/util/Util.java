@@ -38,6 +38,8 @@ import java.lang.management.ManagementFactory;
 import java.lang.management.MonitorInfo;
 import java.lang.management.ThreadInfo;
 import java.lang.management.ThreadMXBean;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.net.Socket;
@@ -236,6 +238,13 @@ public final class Util {
       if (classname == null) throw new IllegalArgumentException("Cannot load null class!");
       Class<T> clazz = loadClassStrict(classname, cl);
       return getInstanceStrict(clazz);
+   }
+   
+   public static <T> T getInstanceWithConstructor( String classname, Class<?>[] parameterTypes, Object[] params, ClassLoader cl ) throws SecurityException, NoSuchMethodException, IllegalArgumentException, InstantiationException, IllegalAccessException, InvocationTargetException {
+      if (classname == null) throw new IllegalArgumentException("Cannot load null class!");
+      Class<T> clazz = loadClass( classname, cl );
+      Constructor<T> constructor = clazz.getDeclaredConstructor(parameterTypes);
+      return constructor.newInstance(params);            
    }
    
    /**

@@ -28,10 +28,12 @@ package org.infinispan.configuration.cache;
 public class BackupForConfiguration {
    private final String remoteCache;
    private final String remoteSite;
+   private final String backupReceiverClass;
 
-   public BackupForConfiguration(String remoteSite, String remoteCache) {
+   public BackupForConfiguration(String remoteSite, String remoteCache, String backupReceiverClass) {
       this.remoteSite = remoteSite;
       this.remoteCache = remoteCache;
+      this.backupReceiverClass = backupReceiverClass;
    }
 
    /**
@@ -48,6 +50,14 @@ public class BackupForConfiguration {
       return remoteSite;
    }
 
+   /**
+    * If there is a custom policy for applying backup changes, then the backupReceiverClass is required and
+    * should return the fully qualified name of a class implementing {@link org.infinispan.xsite.BackupReceiver}
+    */   
+   public String backupReceiverClass() {
+      return backupReceiverClass;
+   }
+   
    @Override
    public boolean equals(Object o) {
       if (this == o) return true;
@@ -57,7 +67,7 @@ public class BackupForConfiguration {
 
       if (remoteCache != null ? !remoteCache.equals(that.remoteCache) : that.remoteCache != null) return false;
       if (remoteSite != null ? !remoteSite.equals(that.remoteSite) : that.remoteSite != null) return false;
-
+      if (backupReceiverClass != null ? !backupReceiverClass.equals(that.backupReceiverClass) : that.backupReceiverClass != null) return false;
       return true;
    }
 
@@ -65,6 +75,7 @@ public class BackupForConfiguration {
    public int hashCode() {
       int result = remoteCache != null ? remoteCache.hashCode() : 0;
       result = 31 * result + (remoteSite != null ? remoteSite.hashCode() : 0);
+      result = 31 * result + (backupReceiverClass != null ? backupReceiverClass.hashCode() : 0);
       return result;
    }
 
@@ -79,6 +90,7 @@ public class BackupForConfiguration {
       return "BackupForConfiguration{" +
             "remoteCache='" + remoteCache + '\'' +
             ", remoteSite='" + remoteSite + '\'' +
+            ", backupReceiverClass='" + backupReceiverClass + '\'' +
             '}';
    }
 }

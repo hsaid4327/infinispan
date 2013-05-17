@@ -40,6 +40,7 @@ import org.infinispan.transaction.LocalTransaction;
 import org.infinispan.transaction.TransactionMode;
 import org.infinispan.transaction.TransactionTable;
 import org.infinispan.transaction.xa.GlobalTransaction;
+import org.infinispan.util.concurrent.ConcurrentMapFactory;
 import org.infinispan.util.logging.Log;
 import org.infinispan.util.logging.LogFactory;
 
@@ -53,25 +54,22 @@ import java.util.concurrent.TimeUnit;
  * @since 5.2
  */
 public class BackupReceiverImpl implements BackupReceiver {
-
-   protected final BackupCacheUpdater siteUpdater;   
-   protected final Cache cache;
-
-   //todo add some housekeeping logic for this, e.g. timeouts..
-   protected final ConcurrentMap<GlobalTransaction, GlobalTransaction> remote2localTx = new ConcurrentHashMap<GlobalTransaction, GlobalTransaction>();   
-
-   public BackupReceiverImpl(Cache cache) {
-      this.cache = cache;
-      siteUpdater = new BackupCacheUpdater(cache, remote2localTx);
-   }
+     
+   protected final Cache<?,?> cache;
+   protected final BackupCacheUpdater siteUpdater;
    
-   public BackupReceiverImpl( Cache cache, BackupCacheUpdater siteUpdater ) {
+   public BackupReceiverImpl(Cache<?,?> cache) {
+      this.cache = cache;
+      siteUpdater = new BackupCacheUpdater(cache);
+   }
+
+   public BackupReceiverImpl(Cache<?,?> cache, BackupCacheUpdater siteUpdater) {
       this.cache = cache;
       this.siteUpdater = siteUpdater;
    }
-
+      
    @Override
-   public Cache getCache() {
+   public Cache<?,?> getCache() {
       return cache;
    }
 
@@ -87,10 +85,10 @@ public class BackupReceiverImpl implements BackupReceiver {
       protected final ConcurrentMap<GlobalTransaction, GlobalTransaction> remote2localTx;
       protected final AdvancedCache backupCache;
 
-      public BackupCacheUpdater(Cache backup, ConcurrentMap<GlobalTransaction, GlobalTransaction> remote2localTx) {
+      public BackupCacheUpdater(Cache backup) {
          //ignore return values on the backup
          this.backupCache = backup.getAdvancedCache().withFlags(Flag.IGNORE_RETURN_VALUES, Flag.SKIP_XSITE_BACKUP, Flag.SKIP_REMOTE_LOOKUP);
-         this.remote2localTx = remote2localTx;
+         this.remote2localTx = ConcurrentMapFactory.makeConcurrentMap();
       }
 
       @Override

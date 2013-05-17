@@ -468,6 +468,15 @@
                               </xs:documentation>
                           </xs:annotation>
                       </xs:attribute>
+                     <xs:attribute name="backupReceiverClass" use="optional" type="xs:string">
+                        <xs:annotation>
+                           <xs:documentation>
+                              If there is a custom policy for applying backup changes, 
+                              then the backupReceiverClass is required and should return the fully qualified name
+                              of a class implementing {@link org.infinispan.xsite.BackupReceiver
+                           </xs:documentation>
+                        </xs:annotation>
+                     </xs:attribute>                      
                   </xs:complexType>
               </xs:element>
           </xs:sequence>
