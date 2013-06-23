@@ -25,7 +25,7 @@
    <modelVersion>4.0.0</modelVersion>
    <groupId>org.infinispan</groupId>
    <artifactId>infinispan-parent</artifactId>
-   <version>5.2.6-SNAPSHOT</version>
+   <version>5.2.0-BNI</version>
    <packaging>pom</packaging>
    <name>Infinispan Common Parent</name>
    <description>Infinispan common parent POM module</description>
@@ -153,12 +153,13 @@
       <version.jclouds>1.4.1</version.jclouds>
       <version.jetty>6.1.25</version.jetty>
       <version.jgoodies.forms>1.0.5</version.jgoodies.forms>
-      <version.jgroups>3.2.7.Final</version.jgroups>
+      <version.jgroups>3.2.10.Final</version.jgroups>
       <version.jsap>2.1</version.jsap>
       <version.json>20090211</version.json>
       <version.jstl>1.2</version.jstl>
       <version.jta>1.0.0.Final</version.jta>
       <version.junit>4.10</version.junit>
+      <version.leveldb>0.6</version.leveldb>
       <version.log4j>1.2.16</version.log4j>
       <version.lucene>3.6.2</version.lucene>
       <version.mc4j>1.2.6</version.mc4j>
@@ -837,6 +838,11 @@
             <groupId>spy</groupId>
             <artifactId>memcached</artifactId>
             <version>${version.spymemcached}</version>
+         </dependency>
+         <dependency>
+            <groupId>org.iq80.leveldb</groupId>
+            <artifactId>leveldb</artifactId>
+            <version>${version.leveldb}</version>
          </dependency>
       </dependencies>
    </dependencyManagement>
