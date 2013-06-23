@@ -27,9 +27,11 @@ import org.infinispan.CacheException;
 import org.infinispan.commands.FlagAffectedCommand;
 import org.infinispan.commands.ReplicableCommand;
 import org.infinispan.commands.remote.CacheRpcCommand;
+import org.infinispan.commands.remote.ClusteredGetCommand;
 import org.infinispan.commands.remote.SingleRpcCommand;
 import org.infinispan.context.Flag;
 import org.infinispan.factories.GlobalComponentRegistry;
+import org.infinispan.remoting.transport.TopologyAwareAddress;
 import org.infinispan.statetransfer.StateRequestCommand;
 import org.infinispan.statetransfer.StateResponseCommand;
 import org.infinispan.remoting.InboundInvocationHandler;
@@ -53,17 +55,10 @@ import org.jgroups.blocks.RpcDispatcher;
 import org.jgroups.blocks.RspFilter;
 import org.jgroups.blocks.mux.Muxer;
 import org.jgroups.protocols.relay.SiteAddress;
-import org.jgroups.util.Buffer;
-import org.jgroups.util.FutureListener;
-import org.jgroups.util.NotifyingFuture;
-import org.jgroups.util.Rsp;
-import org.jgroups.util.RspList;
+import org.jgroups.util.*;
 
 import java.io.NotSerializableException;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -135,8 +130,9 @@ public class CommandAwareRpcDispatcher extends RpcDispatcher {
          asyncExecutor.submit(new Callable<RspList<Object>>() {
             @Override
             public RspList<Object> call() throws Exception {
+
                return processCalls(command, recipients == null, timeout, filter, recipients, mode,
-                                   req_marshaller, CommandAwareRpcDispatcher.this, oob, anycasting, ignoreLeavers);
+                                   req_marshaller, CommandAwareRpcDispatcher.this, oob, anycasting, ignoreLeavers, local_addr);
             }
          });
          return null; // don't wait for a response!
@@ -144,7 +140,7 @@ public class CommandAwareRpcDispatcher extends RpcDispatcher {
          RspList<Object> response;
          try {
             response = processCalls(command, recipients == null, timeout, filter, recipients, mode,
-                                    req_marshaller, this, oob, anycasting, ignoreLeavers);
+                                    req_marshaller, this, oob, anycasting, ignoreLeavers, local_addr);
          } catch (InterruptedException e) {
             throw e;
          } catch (SuspectedException e) {
@@ -319,7 +315,7 @@ public class CommandAwareRpcDispatcher extends RpcDispatcher {
    private static RspList<Object> processCalls(ReplicableCommand command, boolean broadcast, long timeout,
                                                RspFilter filter, List<Address> dests, ResponseMode mode,
                                                Marshaller marshaller, CommandAwareRpcDispatcher card,
-                                               boolean oob, boolean anycasting, boolean ignoreLeavers) throws Exception {
+                                               boolean oob, boolean anycasting, boolean ignoreLeavers, Address self) throws Exception {
       if (trace) log.tracef("Replication task sending %s to addresses %s with response mode %s", command, dests, mode);
 
       /// HACK ALERT!  Used for ISPN-1789.  Enable RSVP if the command is a cache topology control command.
@@ -340,14 +336,30 @@ public class CommandAwareRpcDispatcher extends RpcDispatcher {
 
          // if at all possible, try not to use JGroups' ANYCAST for now.  Multiple (parallel) UNICASTs are much faster.
          if (filter != null) {
-            // This is possibly a remote GET.
+             if(self instanceof TopologyUUID){
+               dests = buildTopologyAddressTargets((TopologyUUID)self, dests);
+             }
+
+             // This is possibly a remote GET.
             // These UNICASTs happen in parallel using sendMessageWithFuture.  Each future has a listener attached
             // (see FutureCollator) and the first successful response is used.
-            FutureCollator futureCollator = new FutureCollator(filter, dests.size(), timeout);
+            FutureCollator futureCollator = new FutureCollator(filter, timeout);
+            
+            // TODO: Make this a configuration option, i.e. 0=disable
+            // Also consider making this a flag or something like that to
+            // have finer-grained control.
+            final int staggeringTimeout = 20;
+
             for (Address a : dests) {
                NotifyingFuture<Object> f = card.sendMessageWithFuture(constructMessage(buf, a, oob, mode, rsvp), opts);
                futureCollator.watchFuture(f, a);
+               
+               // CES: Stagger remote GETs.  This sends a message to the first address in the list
+               // This can be optimized to be an address with the same topology (machine, site, etc).
+               if (command instanceof ClusteredGetCommand && futureCollator.waitForResponse(staggeringTimeout)) 
+                  break;
             }
+            
             retval = futureCollator.getResponseList();
          } else if (mode == ResponseMode.GET_ALL) {
             // A SYNC call that needs to go everywhere
@@ -396,6 +408,50 @@ public class CommandAwareRpcDispatcher extends RpcDispatcher {
       return retval;
    }
 
+    /**
+    * Sorts addresses by the topology characteristics.
+    */
+   private static List<Address> buildTopologyAddressTargets( TopologyUUID localAddress, List<Address> targets ) {
+
+      List<Address> sameMachineList = new LinkedList<Address>();
+      List<Address> sameRackList = new LinkedList<Address>();
+      List<Address> sameSiteList = new LinkedList<Address>();
+      List<Address> otherList = new LinkedList<Address>();
+      List<Address> result = new ArrayList<Address>( targets.size() );
+
+      for( Address a : targets ) {
+
+         if (a instanceof TopologyUUID) {
+
+            if (localAddress.isSameMachine((TopologyUUID) a)) {
+               sameMachineList.add(a);
+            } else if (localAddress.isSameRack((TopologyUUID) a)) {
+               sameRackList.add(a);
+            } else if(localAddress.isSameSite((TopologyUUID) a)) {
+               sameSiteList.add(a);
+            } else {
+               otherList.add(a);
+            }
+         } else {
+            otherList.add(a);
+         }
+      }
+
+      if ( !sameMachineList.isEmpty() ) {
+         result.addAll( sameMachineList );
+      }
+      if ( !sameRackList.isEmpty() ) {
+         result.addAll( sameRackList );
+      }
+      if ( !sameSiteList.isEmpty() ) {
+         result.addAll( sameSiteList );
+      }
+      if( !otherList.isEmpty() ) {
+         result.addAll( otherList );
+      }
+
+      return result;
+   }
    private static boolean isRsvpCommand(ReplicableCommand command) {
       return command instanceof FlagAffectedCommand
             && ((FlagAffectedCommand) command).hasFlag(Flag.GUARANTEED_DELIVERY);
@@ -419,27 +475,60 @@ public class CommandAwareRpcDispatcher extends RpcDispatcher {
    }
 
    final static class FutureCollator implements FutureListener<Object> {
-      final RspFilter filter;
-      final Map<Future<Object>, SenderContainer> futures = new HashMap<Future<Object>, SenderContainer>(4);
-      final long timeout;
+      private final RspFilter filter;
+      private final Map<Future<Object>, SenderContainer> futures;
+      private final long timeout;
+
+      // TODO - analyse whether we need all of these objects guarded by 'this'.  Can we make do with volatiles instead?  It will remove the synchronized methods as well.
       @GuardedBy("this")
       private RspList<Object> retval;
       @GuardedBy("this")
       private Exception exception;
       @GuardedBy("this")
-      private int expectedResponses;
+      private int expectedResponses = 0;
 
-      FutureCollator(RspFilter filter, int expectedResponses, long timeout) {
+      FutureCollator(RspFilter filter, long timeout) {
          this.filter = filter;
          this.expectedResponses = expectedResponses;
          this.timeout = timeout;
+         this.futures = new HashMap<Future<Object>, SenderContainer>(expectedResponses);
       }
 
-      public void watchFuture(NotifyingFuture<Object> f, Address address) {
+      public synchronized void watchFuture(NotifyingFuture<Object> f, Address address) {
+         if (expectedResponses >= 0) {
+            expectedResponses++;
+         } else {
+            throw new IllegalStateException();
+         }
          futures.put(f, new SenderContainer(address));
          f.setListener(this);
       }
 
+      /**
+       * Blocks up up to timeToWaitMillis milliseconds for a (valid or invalid) response.  Will respond with <tt>true</tt>
+       * if the response is valid, or a <tt>false</tt> if the response is invalid or timed out.
+       *
+       * @param timeToWaitMillis
+       * @return true if the response waited for is valid, false if it isn't or if it times out.
+       */
+      public synchronized boolean waitForResponse(long timeToWaitMillis) throws Exception {
+         while (expectedResponses > 0 && retval == null) {
+            try {
+               this.wait(timeToWaitMillis);
+            } catch (InterruptedException e) {
+               // reset interruption flag
+               Thread.currentThread().interrupt();
+               expectedResponses = -1;
+            }
+         }
+         // Now we either have the response we need or aren't expecting any more responses - or have run out of time.
+         if (retval != null)
+            return true;
+         else if (exception != null)
+            throw exception;
+         else
+            return false;
+      }
       public synchronized RspList<Object> getResponseList() throws Exception {
          while (expectedResponses > 0 && retval == null) {
             try {
