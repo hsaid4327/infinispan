@@ -30,6 +30,7 @@ import org.infinispan.commands.remote.CacheRpcCommand;
 import org.infinispan.commands.remote.ClusteredGetCommand;
 import org.infinispan.commands.remote.SingleRpcCommand;
 import org.infinispan.commands.write.WriteCommand;
+import org.infinispan.configuration.cache.Configuration;
 import org.infinispan.distribution.DistributionManager;
 import org.infinispan.factories.annotations.Inject;
 import org.infinispan.util.logging.Log;
@@ -43,16 +44,25 @@ import org.infinispan.util.logging.LogFactory;
  */
 public class DistributionResponseGenerator implements ResponseGenerator {
    DistributionManager distributionManager;
+   Configuration configuration;
 
    @Inject
-   public void inject(DistributionManager distributionManager) {
+   public void inject(DistributionManager distributionManager, Configuration configuration) {
       this.distributionManager = distributionManager;
+      this.configuration = configuration;
    }
 
    @Override
    public Response getResponse(CacheRpcCommand command, Object returnValue) {
       if (command.getCommandId() == ClusteredGetCommand.COMMAND_ID) {
-         if (returnValue == null) return null;
+         
+         // If the cache mode is tx and sync, any null value can be encapsulated in a successful response.
+         boolean txSync = configuration.transaction().transactionMode().isTransactional() && 
+                          configuration.clustering().cacheMode().isSynchronous();
+         
+         if (returnValue == null && !txSync )                
+            return null;
+         
          ClusteredGetCommand clusteredGet = (ClusteredGetCommand) command;
          if (distributionManager.isAffectedByRehash(clusteredGet.getKey()))
             return UnsureResponse.INSTANCE;

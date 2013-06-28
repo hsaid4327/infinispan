@@ -204,14 +204,20 @@ public class ReplicationInterceptor extends ClusteringInterceptor {
       ClusteredGetCommand get = cf.buildClusteredGetCommand(key, command.getFlags(), acquireRemoteLock, gtx);
 
       List<Address> targets = Collections.singletonList(getPrimaryOwner());
-      ResponseFilter filter = new ClusteredGetResponseValidityFilter(targets, rpcManager.getAddress());
+      ResponseFilter filter = new ClusteredGetResponseValidityFilter(targets, rpcManager.getAddress() );
       Map<Address, Response> responses = rpcManager.invokeRemotely(targets, get, ResponseMode.WAIT_FOR_VALID_RESPONSE,
             cacheConfiguration.clustering().sync().replTimeout(), true, filter);
 
       if (!responses.isEmpty()) {
          for (Response r : responses.values()) {
             if (r instanceof SuccessfulResponse) {
-               InternalCacheValue cacheValue = (InternalCacheValue) ((SuccessfulResponse) r).getResponseValue();
+               
+               // The successful response might be null.
+               SuccessfulResponse response = (SuccessfulResponse)r;
+               if( response.getResponseValue() == null )
+                  return null;
+               
+               InternalCacheValue cacheValue = (InternalCacheValue) response.getResponseValue();
                return cacheValue.toInternalCacheEntry(key);
             }
          }
