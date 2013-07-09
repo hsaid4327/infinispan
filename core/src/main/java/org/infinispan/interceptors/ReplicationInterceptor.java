@@ -46,6 +46,7 @@ import org.infinispan.remoting.responses.SuccessfulResponse;
 import org.infinispan.remoting.rpc.ResponseFilter;
 import org.infinispan.remoting.rpc.ResponseMode;
 import org.infinispan.remoting.transport.Address;
+import org.infinispan.remoting.transport.TopologyAwareAddress;
 import org.infinispan.remoting.transport.jgroups.SuspectException;
 import org.infinispan.transaction.LockingMode;
 import org.infinispan.transaction.xa.GlobalTransaction;
@@ -198,12 +199,15 @@ public class ReplicationInterceptor extends ClusteringInterceptor {
    protected Address getPrimaryOwner() {
       return stateTransferManager.getCacheTopology().getReadConsistentHash().getMembers().get(0);
    }
+   protected List<Address> getPrimaryOwners (){
+      return stateTransferManager.getCacheTopology().getReadConsistentHash().getMembers();
+   }
 
    protected InternalCacheEntry retrieveFromRemoteSource(Object key, InvocationContext ctx, boolean acquireRemoteLock, FlagAffectedCommand command) {
       GlobalTransaction gtx = acquireRemoteLock ? ((TxInvocationContext)ctx).getGlobalTransaction() : null;
       ClusteredGetCommand get = cf.buildClusteredGetCommand(key, command.getFlags(), acquireRemoteLock, gtx);
 
-      List<Address> targets = Collections.singletonList(getPrimaryOwner());
+      List<Address> targets = getProximateAddress();
       ResponseFilter filter = new ClusteredGetResponseValidityFilter(targets, rpcManager.getAddress() );
       Map<Address, Response> responses = rpcManager.invokeRemotely(targets, get, ResponseMode.WAIT_FOR_VALID_RESPONSE,
             cacheConfiguration.clustering().sync().replTimeout(), true, filter);
@@ -225,6 +229,41 @@ public class ReplicationInterceptor extends ClusteringInterceptor {
 
       return null;
    }
+
+    private List<Address> getProximateAddress() {
+
+       Address currentNodeAddress = rpcManager.getAddress();
+       if (currentNodeAddress instanceof TopologyAwareAddress) {
+           TopologyAwareAddress currentNode = (TopologyAwareAddress)currentNodeAddress;
+           List<Address> potentialTargets = getPrimaryOwners();
+           List<Address> sameMachineList = new ArrayList<Address>();
+           List<Address> sameRackList = new ArrayList<Address>();
+           List<Address> sameSiteList = new ArrayList<Address>();
+
+           for (Address a : potentialTargets) {
+               if (a instanceof TopologyAwareAddress) {
+                   if (currentNode.isSameMachine((TopologyAwareAddress) a)) {
+                       sameMachineList.add(a);
+                   } else if (currentNode.isSameRack((TopologyAwareAddress) a)) {
+                       sameRackList.add(a);
+                   } else if(currentNode.isSameSite((TopologyAwareAddress) a)) {
+                       sameSiteList.add(a);
+                   }
+               }
+           }
+           if (sameMachineList.size() > 0) {
+               return Collections.singletonList(sameMachineList.get(0));
+           }
+           if (sameRackList.size() > 0) {
+               return Collections.singletonList(sameRackList.get(0));
+           }
+           if (sameSiteList.size() > 0) {
+               return Collections.singletonList(sameSiteList.get(0));
+           }
+       }
+
+       return Collections.singletonList(getPrimaryOwner());
+   } 
 
    private Object localGet(InvocationContext ctx, Object key, boolean isWrite, FlagAffectedCommand command) throws Throwable {
       InternalCacheEntry ice = dataContainer.get(key);
