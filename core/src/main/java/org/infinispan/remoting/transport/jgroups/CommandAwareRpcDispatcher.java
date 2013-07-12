@@ -316,96 +316,107 @@ public class CommandAwareRpcDispatcher extends RpcDispatcher {
                                                RspFilter filter, List<Address> dests, ResponseMode mode,
                                                Marshaller marshaller, CommandAwareRpcDispatcher card,
                                                boolean oob, boolean anycasting, boolean ignoreLeavers, Address self) throws Exception {
-      if (trace) log.tracef("Replication task sending %s to addresses %s with response mode %s", command, dests, mode);
+       if (trace) log.tracef("Replication task sending %s to addresses %s with response mode %s", command, dests, mode);
 
-      /// HACK ALERT!  Used for ISPN-1789.  Enable RSVP if the command is a cache topology control command.
-      boolean rsvp = command instanceof CacheTopologyControlCommand
-            || isRsvpCommand(command);
+       /// HACK ALERT!  Used for ISPN-1789.  Enable RSVP if the command is a cache topology control command.
+       boolean rsvp = command instanceof CacheTopologyControlCommand
+               || isRsvpCommand(command);
 
-      RspList<Object> retval = null;
-      Buffer buf;
-      if (broadcast || FORCE_MCAST) {
-         buf = marshallCall(marshaller, command);
-         retval = card.castMessage(dests, constructMessage(buf, null, oob, mode, rsvp),
-                                   new RequestOptions(mode, timeout, false, filter));
-      } else {
-         RequestOptions opts = new RequestOptions(mode, timeout);
+       RspList<Object> retval = null;
+       Buffer buf;
+       if (broadcast || FORCE_MCAST) {
+           buf = marshallCall(marshaller, command);
+           retval = card.castMessage(dests, constructMessage(buf, null, oob, mode, rsvp),
+                   new RequestOptions(mode, timeout, false, filter));
+       } else {
+           RequestOptions opts = new RequestOptions(mode, timeout);
 
-         if (dests.isEmpty()) return new RspList<Object>();
-         buf = marshallCall(marshaller, command);
-
-         // if at all possible, try not to use JGroups' ANYCAST for now.  Multiple (parallel) UNICASTs are much faster.
-         if (filter != null) {
-             if(self instanceof TopologyUUID){
-               dests = buildTopologyAddressTargets((TopologyUUID)self, dests);
-             }
-
-             // This is possibly a remote GET.
-            // These UNICASTs happen in parallel using sendMessageWithFuture.  Each future has a listener attached
-            // (see FutureCollator) and the first successful response is used.
-            FutureCollator futureCollator = new FutureCollator(filter, timeout);
-            
-            // TODO: Make this a configuration option, i.e. 0=disable
-            // Also consider making this a flag or something like that to
-            // have finer-grained control.
-            final int staggeringTimeout = 20;
-
-            for (Address a : dests) {
-               NotifyingFuture<Object> f = card.sendMessageWithFuture(constructMessage(buf, a, oob, mode, rsvp), opts);
-               futureCollator.watchFuture(f, a);
-               
-               // CES: Stagger remote GETs.  This sends a message to the first address in the list
-               // This can be optimized to be an address with the same topology (machine, site, etc).
-               if (command instanceof ClusteredGetCommand && futureCollator.waitForResponse(staggeringTimeout)) 
-                  break;
-            }
-            
-            retval = futureCollator.getResponseList();
-         } else if (mode == ResponseMode.GET_ALL) {
-            // A SYNC call that needs to go everywhere
-            Map<Address, Future<Object>> futures = new HashMap<Address, Future<Object>>(dests.size());
-
-            for (Address dest : dests)
-               futures.put(dest, card.sendMessageWithFuture(constructMessage(buf, dest, oob, mode, rsvp), opts));
-
-            retval = new RspList<Object>();
-
-            // a get() on each future will block till that call completes.
-            for (Map.Entry<Address, Future<Object>> entry : futures.entrySet()) {
-               Address target = entry.getKey();
-               try {
-                  retval.addRsp(target, entry.getValue().get(timeout, MILLISECONDS));
-               } catch (java.util.concurrent.TimeoutException te) {
-                  throw new TimeoutException(formatString("Timed out after %s waiting for a response from %s",
-                                                          prettyPrintTime(timeout), target));
-               } catch (ExecutionException e) {
-                  if (ignoreLeavers && e.getCause() instanceof SuspectedException) {
-                     log.tracef(formatString("Ignoring node %s that left during the remote call", target));
-                  } else {
-                     throw e;
-                  }
+           if (dests.isEmpty()) return new RspList<Object>();
+           buf = marshallCall(marshaller, command);
+           int staggeredGetTimeout = 0;
+           // if at all possible, try not to use JGroups' ANYCAST for now.  Multiple (parallel) UNICASTs are much faster.
+           if (filter != null) {
+               FutureCollator futureCollator;
+               if (self instanceof TopologyUUID) {
+                   dests = buildTopologyAddressTargets((TopologyUUID) self, dests);
                }
-            }
-         } else if (mode == ResponseMode.GET_NONE) {
-            // An ASYNC call.  We don't care about responses.
-            for (Address dest : dests) card.sendMessage(constructMessage(buf, dest, oob, mode, rsvp), opts);
-         }
-      }
 
-      // we only bother parsing responses if we are not in ASYNC mode.
-      if (mode != ResponseMode.GET_NONE) {
+               if (command instanceof ClusteredGetCommand) {
+                   staggeredGetTimeout = ((ClusteredGetCommand) command).staggeredGetWaitTimeout();
+               }
 
-         if (trace) log.tracef("Responses: %s", retval);
+               // This is possibly a remote GET.
+               // These UNICASTs happen in parallel using sendMessageWithFuture.  Each future has a listener attached
+               // (see FutureCollator) and the first successful response is used.
+               if (staggeredGetTimeout > 0) {
+                   futureCollator = new FutureCollator(filter, timeout);
+               } else {
+                   futureCollator = new FutureCollator(filter, dests.size(), timeout);
+               }
 
-         // a null response is 99% likely to be due to a marshalling problem - we throw a NSE, this needs to be changed when
-         // JGroups supports http://jira.jboss.com/jira/browse/JGRP-193
-         // the serialization problem could be on the remote end and this is why we cannot catch this above, when marshalling.
-         if (retval == null)
-            throw new NotSerializableException("RpcDispatcher returned a null.  This is most often caused by args for "
-                                                     + command.getClass().getSimpleName() + " not being serializable.");
-      }
+               // TODO: Make this a configuration option, i.e. 0=disable
+               // Also consider making this a flag or something like that to
+               // have finer-grained control.
 
-      return retval;
+
+               for (Address a : dests) {
+                   NotifyingFuture<Object> f = card.sendMessageWithFuture(constructMessage(buf, a, oob, mode, rsvp), opts);
+                   futureCollator.watchFuture(f, a);
+
+                   // CES: Stagger remote GETs.  This sends a message to the first address in the list
+                   // This can be optimized to be an address with the same topology (machine, site, etc).
+                   if (command instanceof ClusteredGetCommand &&
+                           staggeredGetTimeout > 0 &&
+                           futureCollator.waitForResponse(staggeredGetTimeout))
+                       break;
+               }
+
+               retval = futureCollator.getResponseList();
+           } else if (mode == ResponseMode.GET_ALL) {
+               // A SYNC call that needs to go everywhere
+               Map<Address, Future<Object>> futures = new HashMap<Address, Future<Object>>(dests.size());
+
+               for (Address dest : dests)
+                   futures.put(dest, card.sendMessageWithFuture(constructMessage(buf, dest, oob, mode, rsvp), opts));
+
+               retval = new RspList<Object>();
+
+               // a get() on each future will block till that call completes.
+               for (Map.Entry<Address, Future<Object>> entry : futures.entrySet()) {
+                   Address target = entry.getKey();
+                   try {
+                       retval.addRsp(target, entry.getValue().get(timeout, MILLISECONDS));
+                   } catch (java.util.concurrent.TimeoutException te) {
+                       throw new TimeoutException(formatString("Timed out after %s waiting for a response from %s",
+                               prettyPrintTime(timeout), target));
+                   } catch (ExecutionException e) {
+                       if (ignoreLeavers && e.getCause() instanceof SuspectedException) {
+                           log.tracef(formatString("Ignoring node %s that left during the remote call", target));
+                       } else {
+                           throw e;
+                       }
+                   }
+               }
+           } else if (mode == ResponseMode.GET_NONE) {
+               // An ASYNC call.  We don't care about responses.
+               for (Address dest : dests) card.sendMessage(constructMessage(buf, dest, oob, mode, rsvp), opts);
+           }
+       }
+
+       // we only bother parsing responses if we are not in ASYNC mode.
+       if (mode != ResponseMode.GET_NONE) {
+
+           if (trace) log.tracef("Responses: %s", retval);
+
+           // a null response is 99% likely to be due to a marshalling problem - we throw a NSE, this needs to be changed when
+           // JGroups supports http://jira.jboss.com/jira/browse/JGRP-193
+           // the serialization problem could be on the remote end and this is why we cannot catch this above, when marshalling.
+           if (retval == null)
+               throw new NotSerializableException("RpcDispatcher returned a null.  This is most often caused by args for "
+                       + command.getClass().getSimpleName() + " not being serializable.");
+       }
+
+       return retval;
    }
 
     /**
@@ -474,35 +485,48 @@ public class CommandAwareRpcDispatcher extends RpcDispatcher {
       }
    }
 
-   final static class FutureCollator implements FutureListener<Object> {
-      private final RspFilter filter;
-      private final Map<Future<Object>, SenderContainer> futures;
-      private final long timeout;
+    final static class FutureCollator implements FutureListener<Object> {
+       private final RspFilter filter;
+       private final Map<Future<Object>, SenderContainer> futures;
+       private final long timeout;
 
-      // TODO - analyse whether we need all of these objects guarded by 'this'.  Can we make do with volatiles instead?  It will remove the synchronized methods as well.
-      @GuardedBy("this")
-      private RspList<Object> retval;
-      @GuardedBy("this")
-      private Exception exception;
-      @GuardedBy("this")
-      private int expectedResponses = 0;
+       // TODO - analyse whether we need all of these objects guarded by 'this'.  Can we make do with volatiles instead?  It will remove the synchronized methods as well.
+       @GuardedBy("this")
+       private RspList<Object> retval;
+       @GuardedBy("this")
+       private Exception exception;
+       @GuardedBy("this")
+       private int expectedResponses = 0;
+       @GuardedBy("this")
+       private boolean useExpectedResponses;
 
-      FutureCollator(RspFilter filter, long timeout) {
-         this.filter = filter;
-         this.expectedResponses = expectedResponses;
-         this.timeout = timeout;
-         this.futures = new HashMap<Future<Object>, SenderContainer>(expectedResponses);
-      }
+       FutureCollator(RspFilter filter, long timeout) {
+          this.filter = filter;
+          this.timeout = timeout;
+          this.futures = new HashMap<Future<Object>, SenderContainer>(expectedResponses);
+          this.useExpectedResponses = false;
+       }
 
-      public synchronized void watchFuture(NotifyingFuture<Object> f, Address address) {
-         if (expectedResponses >= 0) {
-            expectedResponses++;
-         } else {
-            throw new IllegalStateException();
-         }
-         futures.put(f, new SenderContainer(address));
-         f.setListener(this);
-      }
+       FutureCollator(RspFilter filter, int expectedResponses, long timeout) {
+          this.filter = filter;
+          this.expectedResponses = expectedResponses;
+          this.timeout = timeout;
+          this.futures = new HashMap<Future<Object>, SenderContainer>(expectedResponses);
+          this.useExpectedResponses = true;
+       }
+
+       public synchronized void watchFuture(NotifyingFuture<Object> f, Address address) {
+          if (!useExpectedResponses ) {
+             if( expectedResponses >= 0) {
+                expectedResponses++;
+             } else {
+                throw new IllegalStateException();
+             }
+          }
+          futures.put(f, new SenderContainer(address));
+          f.setListener(this);
+       }
+
 
       /**
        * Blocks up up to timeToWaitMillis milliseconds for a (valid or invalid) response.  Will respond with <tt>true</tt>

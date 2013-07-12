@@ -44,6 +44,8 @@ public class HashConfigurationBuilder extends AbstractClusteringConfigurationChi
 
    private final GroupsConfigurationBuilder groupsConfigurationBuilder;
 
+   private int staggeredGetWaitTime = 0;
+
    HashConfigurationBuilder(ClusteringConfigurationBuilder builder) {
       super(builder);
       this.groupsConfigurationBuilder = new GroupsConfigurationBuilder(builder);
@@ -101,6 +103,18 @@ public class HashConfigurationBuilder extends AbstractClusteringConfigurationChi
       this.numSegments = numSegments;
       return this;
    }
+
+   /**
+    * If staggered gets are enabled, this value controls how long the first thread waits until
+    * subsequent gets are sent.  A value of 0 effectively disables this parameter.
+    */
+   public HashConfigurationBuilder staggeredGetWaitTime(int staggeredGetWaitTime ) {
+      if (staggeredGetWaitTime < 1) throw new IllegalArgumentException("staggeredGetWaitTime cannot be less than 1");
+      this.staggeredGetWaitTime = staggeredGetWaitTime;
+      return this;
+   }  
+
+
 
    /**
     * Enable rebalancing and rehashing, which will take place when a new node joins the cluster or a
@@ -178,9 +192,9 @@ public class HashConfigurationBuilder extends AbstractClusteringConfigurationChi
 
    @Override
    public HashConfiguration create() {
-      // TODO stateTransfer().create() will create a duplicate StateTransferConfiguration instance. That's ok as long as none of the stateTransfer settings are modifiable at runtime.
+ // TODO stateTransfer().create() will create a duplicate StateTransferConfiguration instance. That's ok as long as none of the stateTransfer settings are modifiable at runtime.
       return new HashConfiguration(consistentHashFactory, hash, numOwners, numSegments,
-            groupsConfigurationBuilder.create(), stateTransfer().create());
+            groupsConfigurationBuilder.create(), stateTransfer().create(), staggeredGetWaitTime );
    }
 
    @Override
@@ -190,6 +204,7 @@ public class HashConfigurationBuilder extends AbstractClusteringConfigurationChi
       this.numOwners = template.numOwners();
       this.numSegments = template.numSegments();
       this.groupsConfigurationBuilder.read(template.groups());
+      this.staggeredGetWaitTime = template.getStaggeredGetWaitTime();
       return this;
    }
 
@@ -200,6 +215,7 @@ public class HashConfigurationBuilder extends AbstractClusteringConfigurationChi
             ", hash=" + hash +
             ", numOwners=" + numOwners +
             ", numSegments=" + numSegments +
+            ", staggeredGetWaitTime=" + staggeredGetWaitTime +
             ", groups=" + groupsConfigurationBuilder +
             '}';
    }

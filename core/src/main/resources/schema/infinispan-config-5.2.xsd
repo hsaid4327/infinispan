@@ -966,6 +966,14 @@
                     </xs:documentation>
                   </xs:annotation>
                 </xs:attribute>
+                <xs:attribute name="staggeredGetWaitTime" type="xs:int">
+                  <xs:annotation>
+                    <xs:documentation>
+                      If staggered gets are enabled, this value controls how long the first thread waits until subsequent gets are sent.  A value of 0 effectively disables this parameter.
+                    </xs:documentation>
+                  </xs:annotation>
+                </xs:attribute>
+
               </xs:complexType>
             </xs:element>
           </xs:all>

@@ -301,11 +301,17 @@ public class CommandsFactoryImpl implements CommandsFactory {
    }
 
    @Override
+   public ClusteredGetCommand buildClusteredGetCommand(Object key, Set<Flag> flags, boolean acquireRemoteLock, GlobalTransaction gtx, int staggeredGetWaitTimeout) {
+      return new ClusteredGetCommand(key, cacheName, flags, acquireRemoteLock, gtx, staggeredGetWaitTimeout);
+   }
+
+    @Override
    public ClusteredGetCommand buildClusteredGetCommand(Object key, Set<Flag> flags, boolean acquireRemoteLock, GlobalTransaction gtx) {
       return new ClusteredGetCommand(key, cacheName, flags, acquireRemoteLock, gtx);
    }
 
-   /**
+
+    /**
     * @param isRemote true if the command is deserialized and is executed remote.
     */
    @Override

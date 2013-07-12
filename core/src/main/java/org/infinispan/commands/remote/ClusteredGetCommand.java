@@ -75,6 +75,7 @@ public class ClusteredGetCommand extends BaseRpcCommand implements FlagAffectedC
    private TransactionTable txTable;
    private InternalEntryFactory entryFactory;
    private int topologyId;
+   private int staggeredGetWaitTimeout;
 
    private ClusteredGetCommand() {
       super(null); // For command id uniqueness test
@@ -84,15 +85,21 @@ public class ClusteredGetCommand extends BaseRpcCommand implements FlagAffectedC
       super(cacheName);
    }
 
-   public ClusteredGetCommand(Object key, String cacheName, Set<Flag> flags, boolean acquireRemoteLock, GlobalTransaction gtx) {
-      super(cacheName);
-      this.key = key;
-      this.flags = flags;
-      this.acquireRemoteLock = acquireRemoteLock;
-      this.gtx = gtx;
-      if (acquireRemoteLock && (gtx == null))
-         throw new IllegalArgumentException("Cannot have null tx if we need to acquire locks");
+    public ClusteredGetCommand(Object key, String cacheName, Set<Flag> flags, boolean acquireRemoteLock, GlobalTransaction gtx) {
+      this( key, cacheName, flags, acquireRemoteLock, gtx, 0);
    }
+
+    public ClusteredGetCommand(Object key, String cacheName, Set<Flag> flags, boolean acquireRemoteLock, GlobalTransaction gtx, int staggeredGetWaitTimeout) {
+        super(cacheName);
+        this.key = key;
+        this.flags = flags;
+        this.acquireRemoteLock = acquireRemoteLock;
+        this.gtx = gtx;
+        if (acquireRemoteLock && (gtx == null))
+           throw new IllegalArgumentException("Cannot have null tx if we need to acquire locks");
+        this.staggeredGetWaitTimeout = staggeredGetWaitTimeout;
+     }
+  
 
    public ClusteredGetCommand(Object key, String cacheName) {
       this(key, cacheName, InfinispanCollections.<Flag>emptySet(), false, null);
@@ -152,7 +159,11 @@ public class ClusteredGetCommand extends BaseRpcCommand implements FlagAffectedC
       }
    }
 
-   @Override
+  public int staggeredGetWaitTimeout() {
+     return staggeredGetWaitTimeout;
+   }  
+
+    @Override
    public byte getCommandId() {
       return COMMAND_ID;
    }

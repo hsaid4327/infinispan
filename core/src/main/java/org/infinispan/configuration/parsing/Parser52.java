@@ -1386,6 +1386,9 @@ public class Parser52 implements ConfigurationParser<ConfigurationBuilderHolder>
             case NUM_SEGMENTS:
                builder.clustering().hash().numSegments(Integer.parseInt(value));
                break;
+             case STAGGERED_GET_WAIT_TIME:
+               builder.clustering().hash().staggeredGetWaitTime(Integer.parseInt(value));
+               break;
             default:
                throw ParseUtils.unexpectedAttribute(reader, i);
          }

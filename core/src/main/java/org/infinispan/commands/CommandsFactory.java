@@ -273,7 +273,16 @@ public interface CommandsFactory {
     */
    ClusteredGetCommand buildClusteredGetCommand(Object key, Set<Flag> flags, boolean acquireRemoteLock, GlobalTransaction gtx);
 
-   /**
+    /**
+       * Builds a ClusteredGetCommand with staggeredGetWaitWaitTimeout specified, which is a remote lookup command
+       * @param key key to look up
+       * @return a ClusteredGetCommand
+       */
+  ClusteredGetCommand buildClusteredGetCommand(Object key, Set<Flag> flags, boolean acquireRemoteLock, GlobalTransaction gtx, int staggeredGetWaitTimeout);
+
+
+
+    /**
     * Builds a LockControlCommand to control explicit remote locking
     *
     *
