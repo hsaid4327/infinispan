@@ -81,7 +81,7 @@ public abstract class BaseDistributionInterceptor extends ClusteringInterceptor 
    @Override
    protected InternalCacheEntry retrieveFromRemoteSource(Object key, InvocationContext ctx, boolean acquireRemoteLock, FlagAffectedCommand command) throws Exception {
       GlobalTransaction gtx = acquireRemoteLock ? ((TxInvocationContext)ctx).getGlobalTransaction() : null;
-      ClusteredGetCommand get = cf.buildClusteredGetCommand(key, command.getFlags(), acquireRemoteLock, gtx);
+      ClusteredGetCommand get = cf.buildClusteredGetCommand(key, command.getFlags(), acquireRemoteLock, gtx, cacheConfiguration.clustering().hash().getStaggeredGetWaitTime());
 
        Address localAddress = rpcManager.getAddress();
       List<Address> targets;

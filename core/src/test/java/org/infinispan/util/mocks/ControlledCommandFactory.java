@@ -256,6 +256,11 @@ public class ControlledCommandFactory implements CommandsFactory {
    }
 
    @Override
+   public ClusteredGetCommand buildClusteredGetCommand(Object key, Set<Flag> flags, boolean acquireRemoteLock, GlobalTransaction gtx, int staggeredGetWaitTimeout) {
+      return actual.buildClusteredGetCommand(key, flags, acquireRemoteLock, gtx, staggeredGetWaitTimeout);
+   }
+
+   @Override
    public LockControlCommand buildLockControlCommand(Collection<Object> keys, Set<Flag> flags, GlobalTransaction gtx) {
       return actual.buildLockControlCommand(keys, flags, gtx);
    }
